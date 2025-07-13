@@ -1,26 +1,36 @@
 const express = require('express');
-const {ServerConfig,logger}=require('./config');
-const {AboutController, HomeController} = require('./controllers');
-const nodemailer = require('nodemailer');
-const mailsender= require('./config/email-config');
+const amqplib  = require("amqplib");
+const { EmailService } = require('./services')
+async function connectQueue() {
+    try {
+        const connection = await amqplib.connect("amqp://localhost");
+        const channel = await connection.createChannel();
+        await channel.assertQueue("noti-queue");
+        channel.consume("noti-queue", async (data) => {
+            console.log(`${Buffer.from(data.content)}`);
+            const object = JSON.parse(`${Buffer.from(data.content)}`);
+            // const object = JSON.parse(Buffer.from(data).toString());
+            await EmailService.sendEmail("radhamadhab053@gmail.com", object.recepientEmail, object.subject, object.text);
+            channel.ack(data);
+        })
+    } catch(error) {
+        
+    }
+}
+
+const { ServerConfig } = require('./config');
 const apiRoutes = require('./routes');
+
+const mailsender = require('./config/email-config')
 const app = express();
+
 app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use('/api',apiRoutes);
-app.listen(ServerConfig.PORT,async() =>{
-    console.log(`Server is running on port ${ServerConfig.PORT}`);
-           logger.info(`Server started on port ${ServerConfig.PORT}`,{});
-    // Example usage of mailsender
-try{
-      const response= await mailsender.mailsender.sendMail({
-        from: ServerConfig.GMAIL_EMAIL,
-        to: 'radhamadhabpattnaik23@gmail.com',
-        subject: 'Test Email',
-        text: 'This is a test email sent from the Notification Service.'});
-        console.log('Email sent successfully:', response);
-}
-catch (error) {
-    console.error('Error sending email:', error);
-}
-})
+app.use(express.urlencoded({extended: true}));
+
+app.use('/api', apiRoutes);
+
+app.listen(ServerConfig.PORT, async () => {
+    console.log(`Successfully started the server on PORT : ${ServerConfig.PORT}`);
+    await connectQueue();
+    console.log("queue is up")
+});
